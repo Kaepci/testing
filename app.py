@@ -35,27 +35,54 @@ class Subscription:
         else:
             st.info(f"Subscription for {self.user_name} is active until {self.end_date}.")
 
+    def change_plan(self, new_plan):
+        self.plan_type = new_plan
+        self.end_date = self.calculate_end_date()
+        st.success(f"Subscription plan changed to {new_plan} for {self.user_name}. New end date: {self.end_date}")
+
+    def cancel_subscription(self):
+        self.is_active = False
+        self.end_date = datetime.datetime.now()
+        st.success(f"Subscription for {self.user_name} has been cancelled.")
+
 def main():
     st.title("Subscription Management System")
 
     # Input pengguna
     user_name = st.text_input("Enter your name:")
 
-    plan_type = st.radio("Choose your plan type:", ("monthly", "yearly"))
+    if 'subscription' not in st.session_state:
+        st.session_state['subscription'] = None
 
-    if st.button("Create Subscription"):
-        if user_name:
-            # Membuat langganan baru
-            subscription = Subscription(user_name, plan_type)
-
-            # Menampilkan status langganan
+    if user_name:
+        # Jika langganan sudah ada
+        if st.session_state['subscription']:
+            subscription = st.session_state['subscription']
             subscription.check_status()
+            
+            # Mengubah paket
+            new_plan = st.radio("Change your plan to:", ("monthly", "yearly"))
+            if st.button(f"Change to {new_plan} plan"):
+                subscription.change_plan(new_plan)
+                st.session_state['subscription'] = subscription  # Simpan perubahan
 
-            # Pilihan untuk memperbarui langganan
-            if st.button("Renew Subscription"):
-                subscription.renew_subscription()
+            # Pembatalan langganan
+            if st.button("Cancel Subscription"):
+                subscription.cancel_subscription()
+                st.session_state['subscription'] = None  # Menghapus langganan yang dibatalkan
         else:
-            st.warning("Please enter your name before creating a subscription.")
+            # Membuat langganan baru
+            plan_type = st.radio("Choose your plan type:", ("monthly", "yearly"))
+
+            if st.button("Create Subscription"):
+                # Membuat langganan baru
+                subscription = Subscription(user_name, plan_type)
+                st.session_state['subscription'] = subscription  # Menyimpan langganan ke session state
+                st.success(f"Subscription created for {user_name} with {plan_type} plan.")
+                subscription.check_status()
+
+    else:
+        st.warning("Please enter your name to manage your subscription.")
 
 if __name__ == "__main__":
     main()
