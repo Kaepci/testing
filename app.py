@@ -1,88 +1,110 @@
 import streamlit as st
+import pandas as pd
 import datetime
 
-class Subscription:
-    def __init__(self, user_name, plan_type):
-        self.user_name = user_name
-        self.plan_type = plan_type
-        self.start_date = datetime.datetime.now()
-        self.end_date = self.calculate_end_date()
-        self.is_active = True
+# Fungsi untuk membaca dataset langganan
+def load_data():
+    try:
+        df = pd.read_csv("subscriptions.csv")
+        return df
+    except FileNotFoundError:
+        # Jika file tidak ada, buat dataset kosong
+        return pd.DataFrame(columns=["id", "user_name", "plan_type", "start_date", "end_date", "is_active"])
 
-    def calculate_end_date(self):
-        if self.plan_type == "monthly":
-            return self.start_date + datetime.timedelta(days=30)
-        elif self.plan_type == "yearly":
-            return self.start_date + datetime.timedelta(days=365)
-        else:
-            raise ValueError("Plan type must be 'monthly' or 'yearly'")
+# Fungsi untuk menyimpan data ke dalam dataset
+def save_data(df):
+    df.to_csv("subscriptions.csv", index=False)
 
-    def renew_subscription(self):
-        if not self.is_active:
-            st.warning(f"Subscription for {self.user_name} is expired. Please renew.")
-            return
-        if self.plan_type == "monthly":
-            self.end_date = self.end_date + datetime.timedelta(days=30)
-        elif self.plan_type == "yearly":
-            self.end_date = self.end_date + datetime.timedelta(days=365)
-        st.success(f"Subscription renewed for {self.user_name}. New end date: {self.end_date}")
+# Fungsi untuk memeriksa status langganan
+def check_status(row):
+    today = datetime.datetime.now()
+    end_date = datetime.datetime.strptime(row["end_date"], "%Y-%m-%d")
+    if today > end_date:
+        return False
+    return True
 
-    def check_status(self):
-        today = datetime.datetime.now()
-        if today > self.end_date:
-            self.is_active = False
-            st.error(f"Subscription for {self.user_name} has expired on {self.end_date}.")
-        else:
-            st.info(f"Subscription for {self.user_name} is active until {self.end_date}.")
+# Fungsi untuk memperbarui langganan
+def update_subscription(df, user_name, new_plan):
+    user_data = df[df["user_name"] == user_name]
+    if not user_data.empty:
+        user_data["plan_type"] = new_plan
+        user_data["end_date"] = (datetime.datetime.now() + datetime.timedelta(days=30) if new_plan == "monthly" 
+                                  else datetime.datetime.now() + datetime.timedelta(days=365)).strftime("%Y-%m-%d")
+        df.update(user_data)
+        save_data(df)
+        return True
+    return False
 
-    def change_plan(self, new_plan):
-        self.plan_type = new_plan
-        self.end_date = self.calculate_end_date()
-        st.success(f"Subscription plan changed to {new_plan} for {self.user_name}. New end date: {self.end_date}")
-
-    def cancel_subscription(self):
-        self.is_active = False
-        self.end_date = datetime.datetime.now()
-        st.success(f"Subscription for {self.user_name} has been cancelled.")
+# Fungsi untuk membatalkan langganan
+def cancel_subscription(df, user_name):
+    user_data = df[df["user_name"] == user_name]
+    if not user_data.empty:
+        user_data["is_active"] = False
+        user_data["end_date"] = datetime.datetime.now().strftime("%Y-%m-%d")
+        df.update(user_data)
+        save_data(df)
+        return True
+    return False
 
 def main():
-    st.title("Subscription Management System")
+    st.title("Subscription Management System with Dataset")
+
+    # Load data dari file CSV
+    df = load_data()
 
     # Input pengguna
     user_name = st.text_input("Enter your name:")
 
-    if 'subscription' not in st.session_state:
-        st.session_state['subscription'] = None
-
     if user_name:
-        # Jika langganan sudah ada
-        if st.session_state['subscription']:
-            subscription = st.session_state['subscription']
-            subscription.check_status()
+        # Mengecek apakah pengguna sudah terdaftar
+        user_data = df[df["user_name"] == user_name]
+
+        if not user_data.empty:
+            # Menampilkan status langganan pengguna
+            user_row = user_data.iloc[0]
+            st.write(f"Subscription for {user_name} is {'active' if user_row['is_active'] else 'inactive'} until {user_row['end_date']}.")
             
-            # Mengubah paket
+            # Cek status langganan
+            if not check_status(user_row):
+                st.error(f"Your subscription has expired on {user_row['end_date']}. Please renew or change your plan.")
+            
+            # Pilihan untuk mengubah paket
             new_plan = st.radio("Change your plan to:", ("monthly", "yearly"))
             if st.button(f"Change to {new_plan} plan"):
-                subscription.change_plan(new_plan)
-                st.session_state['subscription'] = subscription  # Simpan perubahan
-
+                if update_subscription(df, user_name, new_plan):
+                    st.success(f"Subscription plan for {user_name} updated to {new_plan}.")
+                else:
+                    st.error(f"Failed to update the subscription for {user_name}.")
+            
             # Pembatalan langganan
             if st.button("Cancel Subscription"):
-                subscription.cancel_subscription()
-                st.session_state['subscription'] = None  # Menghapus langganan yang dibatalkan
+                if cancel_subscription(df, user_name):
+                    st.success(f"Subscription for {user_name} has been cancelled.")
+                else:
+                    st.error(f"Failed to cancel the subscription for {user_name}.")
+        
         else:
+            st.warning(f"No active subscription found for {user_name}.")
+            
             # Membuat langganan baru
             plan_type = st.radio("Choose your plan type:", ("monthly", "yearly"))
-
             if st.button("Create Subscription"):
-                # Membuat langganan baru
-                subscription = Subscription(user_name, plan_type)
-                st.session_state['subscription'] = subscription  # Menyimpan langganan ke session state
-                st.success(f"Subscription created for {user_name} with {plan_type} plan.")
-                subscription.check_status()
-
-    else:
-        st.warning("Please enter your name to manage your subscription.")
+                new_id = len(df) + 1
+                new_start_date = datetime.datetime.now().strftime("%Y-%m-%d")
+                new_end_date = (datetime.datetime.now() + datetime.timedelta(days=30) if plan_type == "monthly"
+                                else datetime.datetime.now() + datetime.timedelta(days=365)).strftime("%Y-%m-%d")
+                new_subscription = pd.DataFrame({
+                    "id": [new_id],
+                    "user_name": [user_name],
+                    "plan_type": [plan_type],
+                    "start_date": [new_start_date],
+                    "end_date": [new_end_date],
+                    "is_active": [True]
+                })
+                df = pd.concat([df, new_subscription], ignore_index=True)
+                save_data(df)
+                st.success(f"New subscription created for {user_name} with {plan_type} plan.")
+        st.write(df)
 
 if __name__ == "__main__":
     main()
